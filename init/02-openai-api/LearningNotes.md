@@ -72,6 +72,15 @@ Interestingly, these control parameters are always returned in the request's res
 ** output
 ** finish_reason
 
+## Error Handling
+
+Scenario	HTTP Status	Response Schema	What did I learn?
+Valid request	200	Success object	Contains output, usage, metadata
+Invalid API key	401	Error object	Error schema is different from success schema
+Invalid model	400	Error object	Same error schema, specific Message / Parameter / Code
+Missing input	400	Error object	Same error schema, specific Message / Parameter / Code
+Malformed JSON	400	Error object	Same error schema, specific Message / Parameter / Code
+
 ## What surprised me?
 
 (To be filled after implementation)

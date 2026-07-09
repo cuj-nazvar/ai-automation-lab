@@ -2,70 +2,107 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 import os
-
 import requests
 
-# Now we are making a pure REST API request to the OpenAI API WITHOUT using the OpenAI Python client library.
-os.getenv("OPENAI_API_KEY")  # Ensure the API key is loaded from the .env file
 
-# Find the repository root (two levels above this file)
-repo_root = Path(__file__).resolve().parents[2]
-load_dotenv(repo_root / ".env")
+def main():
 
-api_key = os.getenv("OPENAI_API_KEY")
+    # Now we are making a pure REST API request to the OpenAI API WITHOUT using the OpenAI Python client library.
+    os.getenv("OPENAI_API_KEY")  # Ensure the API key is loaded from the .env file
 
-headers = {
-    "Authorization": f"Bearer {api_key}",
-    "Content-Type": "application/json",
-}
+    # Find the repository root (two levels above this file)
+    repo_root = Path(__file__).resolve().parents[2]
+    load_dotenv(repo_root / ".env")
 
-payload = {
-    "model": "gpt-5.5",
-    "input": "Explain Retrieval Augmented Generation in one sentence.",
-}
+    api_key = os.getenv("OPENAI_API_KEY")
 
-response = requests.post(
-    "https://api.openai.com/v1/responses", headers=headers, json=payload
-)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
 
-response_json = response.json()
-usage = response_json["usage"]
-output_text = response_json["output"][0]["content"][0]["text"]
+    payload = {
+        "model": "gpt-5.5",
+        "input": "Explain Retrieval Augmented Generation in one sentence.",
+    }
 
-# Print essential information about the response in a human-readable format
-print(f"""
-========================================
-OpenAI Response Summary
-========================================
+    response = requests.post(
+        "https://api.openai.com/v1/responses", headers=headers, json=payload
+    )
 
-HTTP Status    : {response.status_code} {response.reason}
+    if response.ok:
+        print_response_summary(response)
 
-Model          : {response_json["model"]}
-Response ID    : {response_json["id"]}
-Created At     : {response_json["created_at"]}
+        # This is going to be a requests.models.Response
+        print(f"Type of response: {type(response)}")
+        # This is going to be a dict
+        print(f"Type of response.json(): {type(response.json())}")
+        # This is going to be a bytes
+        print(f"Type of response.content: {type(response.content)}")
+    else:
+        print_error_summary(response)
 
-Input Tokens   : {usage["input_tokens"]}
-Output Tokens  : {usage["output_tokens"]}
-Total Tokens   : {usage["total_tokens"]}
+    # client = OpenAI()
+    #
+    # response = client.responses.create(
+    #    model="gpt-5.5",
+    #    input="Explain Retrieval Augmented Generation in 5 bullet points for a technical program manager.",
+    # )
+    #
+    # print(response.output_text)
 
-Response Length: {len(response.text)} characters
-Output Text    : {output_text}
 
-========================================
-""")
+def print_response_summary(response):
+    response_json = response.json()
+    usage = response_json["usage"]
+    output_text = response_json["output"][0]["content"][0]["text"]
 
-# This is going to be a requests.models.Response
-print(f"Type of response: {type(response)}")
-# This is going to be a dict
-print(f"Type of response.json(): {type(response.json())}")
-# This is going to be a bytes
-print(f"Type of response.content: {type(response.content)}")
+    print(f"""
+    ========================================
+    OpenAI Response Summary
+    ========================================
 
-# client = OpenAI()
-#
-# response = client.responses.create(
-#    model="gpt-5.5",
-#    input="Explain Retrieval Augmented Generation in 5 bullet points for a technical program manager.",
-# )
-#
-# print(response.output_text)
+    HTTP Status    : {response.status_code} {response.reason}
+
+    Model          : {response_json["model"]}
+    Response ID    : {response_json["id"]}
+    Created At     : {response_json["created_at"]}
+
+    Input Tokens   : {usage["input_tokens"]}
+    Output Tokens  : {usage["output_tokens"]}
+    Total Tokens   : {usage["total_tokens"]}
+
+    Response Length: {len(response.text)} characters
+    Output Text    : {output_text}
+
+    ========================================
+    """)
+
+
+def print_error_summary(response):
+    try:
+        response_json = response.json()
+    except ValueError:
+        response_json = {}
+
+    error = response_json.get("error", {})
+
+    print(f"""
+    ========================================
+    OpenAI Error Summary
+    ========================================
+
+    HTTP Status : {response.status_code} {response.reason}
+
+    Type        : {error.get("type", "No error type provided")}
+    Code        : {error.get("code", "No error code provided")}
+    Parameter   : {error.get("param", "No error parameter provided")}
+
+    Message     : {error.get("message", "No error message provided")}
+
+    ========================================
+    """)
+
+
+if __name__ == "__main__":
+    main()
