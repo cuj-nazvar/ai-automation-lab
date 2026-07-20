@@ -4,31 +4,63 @@ from openai import OpenAI
 import os
 import requests
 
+API_URL = "https://api.openai.com/v1/responses"
+MODEL = "gpt-5.5"
+PROMPT = "Explain Retrieval Augmented Generation in one sentence."
 
-def main():
 
-    # Now we are making a pure REST API request to the OpenAI API WITHOUT using the OpenAI Python client library.
-    os.getenv("OPENAI_API_KEY")  # Ensure the API key is loaded from the .env file
+def main() -> None:
 
-    # Find the repository root (two levels above this file)
+    load_environment()
+    api_key = get_openai_api_key()
+
+    print("\nRunning raw HTTPS request to OpenAI API...")
+    run_raw_https_request(api_key)
+    print("\nRunning OpenAI SDK request to OpenAI API...")
+    run_openai_sdk_request()
+
+
+def load_environment() -> None:
+    # Load environment variables from the repository-level .env file.
     repo_root = Path(__file__).resolve().parents[2]
-    load_dotenv(repo_root / ".env")
+    env_file = repo_root / ".env"
+    if not env_file.exists():
+        raise FileNotFoundError(f".env file not found at {env_file}")
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    load_dotenv(env_file)
 
+
+def get_openai_api_key() -> str:
+    # Return the OpenAI API key or fail with a clear error.
+    open_api_key = os.getenv("OPENAI_API_KEY")
+    if not open_api_key:
+        raise ValueError("OPENAI_API_KEY not found in environment variables.")
+
+    return open_api_key
+
+
+def run_raw_https_request(open_api_key: str) -> None:
+    # This is the very basic way to make a request to the OpenAI API. It is useful for understanding how the API works and for debugging issues with the OpenAI Python client library.
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {open_api_key}",
         "Content-Type": "application/json",
     }
 
     payload = {
-        "model": "gpt-5.5",
-        "input": "Explain Retrieval Augmented Generation in one sentence.",
+        "model": MODEL,
+        "input": PROMPT,
     }
 
-    response = requests.post(
-        "https://api.openai.com/v1/responses", headers=headers, json=payload
-    )
+    try:
+        response = requests.post(
+            API_URL,
+            headers=headers,
+            json=payload,
+            timeout=10,  # seconds
+        )
+    except requests.RequestException as e:
+        print(f"Error making request: {e}")
+        return
 
     if response.ok:
         print_response_summary(response)
@@ -42,14 +74,20 @@ def main():
     else:
         print_error_summary(response)
 
-    # client = OpenAI()
-    #
-    # response = client.responses.create(
-    #    model="gpt-5.5",
-    #    input="Explain Retrieval Augmented Generation in 5 bullet points for a technical program manager.",
-    # )
-    #
-    # print(response.output_text)
+
+def run_openai_sdk_request() -> None:
+    # This is the recommended way to make a request to the OpenAI API. It is easier to use and provides better error handling.
+    client = OpenAI()
+    try:
+        response = client.responses.create(
+            model=MODEL,
+            input=PROMPT,
+        )
+    except Exception as e:
+        print(f"Error making request: {e}")
+        return
+
+    print_sdk_response_summary(response)
 
 
 def print_response_summary(response):
@@ -77,6 +115,30 @@ def print_response_summary(response):
 
     ========================================
     """)
+
+
+def print_sdk_response_summary(sdk_response) -> None:
+    usage = sdk_response.usage
+
+    print(
+        f"""
+    ========================================
+    OpenAI SDK Response Summary
+    ========================================
+
+    Model           : {sdk_response.model}
+    Response ID     : {sdk_response.id}
+    Created At      : {sdk_response.created_at}
+
+    Input Tokens    : {usage.input_tokens}
+    Output Tokens   : {usage.output_tokens}
+    Total Tokens    : {usage.total_tokens}
+
+    Output Text     : {sdk_response.output_text}
+
+    ========================================
+    """
+    )
 
 
 def print_error_summary(response):
