@@ -38,6 +38,61 @@ Tokenization answers "What symbols make up this text?"
 Embeddings answer "What do those symbols initially mean?"
 The Transformer answers "What do those symbols mean in this specific context?"
 
+# Attention
+
+Attention is the mechanism that allows a model to determine which tokens in a sequence are most relevant to one another.
+
+After tokenization and the initial embedding step, every token has its own numerical representation. At this stage, however, each token is still represented independently and does not yet include information from the surrounding context.
+
+Attention changes this by allowing every token to compare itself with other tokens in the sequence and assign them different importance weights.
+
+For each token, the model creates three learned representations:
+
+- **Query** — what information the token is looking for
+- **Key** — what kind of information the token can be matched against
+- **Value** — the information the token contributes if it receives attention
+
+The Query vector of one token is compared with the Key vectors of the other tokens. These comparisons produce attention scores. The scores are normalized using softmax so that they become attention weights whose total is approximately 1.
+
+The token then receives a weighted combination of the Value vectors from the other tokens.
+
+## Overview of the mathematical formula used
+Attention(Q, K, V) = softmax(QKᵀ / √dₖ)V
+- QKᵀ calculates how relevant the tokens are to one another.
+- Division by √dₖ keeps the scores numerically stable.
+- softmax converts the scores into normalized attention weights.
+- Multiplication by V produces the contextualized representations.
+
+Conceptually, attention follows the following steps:
+
+Initial token embeddings
+        ↓
+Create Query, Key and Value vectors
+        ↓
+Compare Queries with Keys
+        ↓
+Calculate attention weights
+        ↓
+Combine Value vectors using those weights
+        ↓
+Contextual token representations
+
+Key Characteristics:
+- Attention allows tokens to exchange information with other tokens in the sequence.
+- It transforms initial token embeddings into contextual representations.
+- The same token can receive a different contextual representation in different sentences.
+- Query, Key and Value vectors are derived from the token embeddings using learned projection matrices.
+- Queries and Keys determine relevance.
+- Values contain the information that is transferred.
+- Attention weights are calculated dynamically for every input.
+- Attention weights are normalized using softmax.
+- Each token can attend to itself as well as other tokens.
+- In self-attention, Queries, Keys and Values originate from the same sequence.
+- The projection matrices are learned during model training and remain fixed during inference.
+- Attention does not update the model during a conversation; it computes new contextual representations using the existing trained weights.
+- GPT-style models use causal masking so that a token cannot attend to future tokens during next-token prediction.
+- A single attention mechanism captures one pattern of relationships; multi-head attention allows the model to learn several relationship patterns in parallel.
+
 # RAG - Retrival Augmented Generation
 
 The pipeline looks something like:
