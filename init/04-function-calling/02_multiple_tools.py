@@ -34,7 +34,6 @@ def calculate_token_cost(
     """Calculate the cost of processing input and output tokens."""
 
     input_cost = input_tokens / 1_000_000 * input_price_per_million
-
     output_cost = output_tokens / 1_000_000 * output_price_per_million
 
     return {
@@ -52,7 +51,6 @@ def calculate_project_capacity(
     """Calculate how many weeks are required to complete a workload."""
 
     weekly_capacity = number_of_people * hours_per_person_per_week
-
     required_weeks = total_work_hours / weekly_capacity
 
     return {
@@ -168,6 +166,23 @@ TOOLS = [
     },
 ]
 
+## This is the generic dispatcher, which receives a Python function name and a dictionary of arguments, and routes the call to the appropriate function. This is the mechanism that allows the model to call Python functions.
+##
+## Essentially the dispatching will look like e.g:
+##                  LLM
+##                   │
+##                   │ requests:
+##                   │
+##                   │ "calculate_project_capacity"
+##                   │ + arguments
+##                   ▼
+##         execute_function_call()
+##              dispatcher
+##                   │
+##        ┌──────────┼──────────┐
+##        ▼          ▼          ▼
+## token_volume   token_cost   project_capacity
+
 
 def execute_function_call(function_name: str, arguments: dict) -> dict:
     """Route a function call requested by the model to the Python implementation."""
@@ -181,6 +196,7 @@ def execute_function_call(function_name: str, arguments: dict) -> dict:
     if function_name == "calculate_project_capacity":
         return calculate_project_capacity(**arguments)
 
+    # This is already a basig guardrail. It will not be reached if the model is using the tools parameter correctly, but it is a good safety check.
     raise ValueError(f"Unknown function requested: {function_name}")
 
 
@@ -191,6 +207,7 @@ def load_environment() -> None:
     load_dotenv(repo_root / ".env")
 
 
+'''
 USER_REQUEST = """
 We have a project with approximately 650 hours of work remaining.
 
@@ -198,6 +215,113 @@ There are 4 engineers available, and each engineer can dedicate
 about 25 hours per week to this project.
 
 How many weeks should we expect the remaining work to take?
+"""
+
+The USER_REQUEST above yields the following result:
+
+Response output items:
+- function_call
+
+Function requested by model
+Name      : calculate_project_capacity
+Arguments : {'total_work_hours': 650, 'number_of_people': 4, 'hours_per_person_per_week': 25}
+Result    : {'total_work_hours': 650, 'weekly_capacity': 100, 'required_weeks': 6.5}
+
+USER_REQUEST = """
+We expect 1,500 API requests.
+Each request contains approximately 4,000 input tokens
+and generates around 600 output tokens.
+
+How many tokens will we process in total?
+"""
+
+The USER_REQUEST above yields the following result:
+Response output items:
+- function_call
+
+Function requested by model
+Name      : calculate_token_volume
+Arguments : {'number_of_requests': 1500, 'input_tokens_per_request': 4000, 'output_tokens_per_request': 600}
+Result    : {'number_of_requests': 1500, 'total_input_tokens': 6000000, 'total_output_tokens': 900000, 'total_tokens': 6900000}
+
+USER_REQUEST = """
+We expect to process 2,400,000 input tokens and
+350,000 output tokens.
+
+Input tokens cost 2.50 per million and output tokens
+cost 10.00 per million.
+
+How much will that cost?
+"""
+
+The USER_REQUEST above yields the following result:
+Response output items:
+- function_call
+
+Function requested by model
+Name      : calculate_token_cost
+Arguments : {'input_tokens': 2400000, 'output_tokens': 350000, 'input_price_per_million': 2.5, 'output_price_per_million': 10}
+Result    : {'input_cost': 6.0, 'output_cost': 3.5, 'total_cost': 9.5}
+
+
+USER_REQUEST = """
+We are planning 200 API calls per hour per engineer, and have a team of 4 engineers for the remaining 5 weeks.
+
+Each engineer can dedicate 20 hours per week to this project.
+
+Our APIs are expected to process 3,000 input tokens and 500 output tokens per request. Input tokens cost 2.50 per million and output tokens cost 10.00 per million.
+
+How much it will cost to process all the requests in the remaining 5 weeks?
+"""
+
+The USER REQUEST above yields the following result:
+
+Response output items:
+- reasoning
+- function_call
+
+Function requested by model
+Name      : calculate_token_volume
+Arguments : {'number_of_requests': 80000, 'input_tokens_per_request': 3000, 'output_tokens_per_request': 500}
+Result    : {'number_of_requests': 80000, 'total_input_tokens': 240000000, 'total_output_tokens': 40000000, 'total_tokens': 280000000}
+- function_call
+
+Function requested by model
+Name      : calculate_token_cost
+Arguments : {'input_tokens': 240000000, 'output_tokens': 40000000, 'input_price_per_million': 2.5, 'output_price_per_million': 10}
+Result    : {'input_cost': 600.0, 'output_cost': 400.0, 'total_cost': 1000.0}
+
+Essentially, this is what is happening, i.e. the model forms both calls in parallel, and not sequentially, and then the Python code executes both afterwards.
+This is NOT what we want to have in the real world, but it is a good demonstration of how the model can call multiple functions in parallel.
+
+                    MODEL RESPONSE
+                         │
+          ┌──────────────┴──────────────┐
+          ▼                             ▼
+calculate_token_volume()      calculate_token_cost()
+      80,000                       240M / 40M
+          │                             │
+          └──────────────┬──────────────┘
+                         ▼
+                  Python executes
+                   both afterwards
+'''
+
+USER_REQUEST = """
+First calculate the total token volume for 80,000 API requests.
+
+Each request contains 3,000 input tokens and 500 output tokens.
+
+After the token volume has been calculated, use the ACTUAL RESULT returned
+by the calculate_token_volume tool to calculate the cost.
+
+Input tokens cost 2.50 per million and output tokens cost 10.00 per million.
+
+Do not calculate or infer the token totals yourself.
+You must wait for the result of calculate_token_volume before calling
+calculate_token_cost.
+
+What is the total cost?
 """
 
 
@@ -212,17 +336,49 @@ def main() -> None:
         tools=TOOLS,
     )
 
-    print("\nResponse output items:")
+    while True:
+        function_calls = [
+            item for item in response.output if item.type == "function_call"
+        ]
 
-    for item in response.output:
-        print(f"- {item.type}")
+        # No more function calls means the model is finished.
+        if not function_calls:
+            print("\n========================================")
+            print("Final response")
+            print("========================================")
+            print(response.output_text)
+            break
 
-        if item.type == "function_call":
-            arguments = json.loads(item.arguments)
+        tool_outputs = []
+
+        for function_call in function_calls:
+            arguments = json.loads(function_call.arguments)
 
             print("\nFunction requested by model")
-            print(f"Name      : {item.name}")
+            print(f"Name      : {function_call.name}")
             print(f"Arguments : {arguments}")
+
+            result = execute_function_call(
+                function_name=function_call.name,
+                arguments=arguments,
+            )
+
+            print(f"Result    : {result}")
+
+            tool_outputs.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": function_call.call_id,
+                    "output": json.dumps(result),
+                }
+            )
+
+        response = client.responses.create(
+            model="gpt-5.5",
+            previous_response_id=response.id,
+            input=tool_outputs,
+            tools=TOOLS,
+        )
 
 
 if __name__ == "__main__":
