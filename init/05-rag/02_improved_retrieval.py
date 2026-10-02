@@ -230,6 +230,91 @@ def rerank_chunks(
     return reranked_chunks
 
 
+## Function for expanding the user's query into multiple alternative search queries. This can help improve retrieval by considering different ways the information might be expressed in the documents.
+def expand_query(
+    client: OpenAI,
+    question: str,
+) -> list[str]:
+    """Generate alternative search queries for the user's question."""
+
+    prompt = f"""
+    Generate 3 short search queries that could help retrieve information
+    needed to answer the question below.
+
+    Use alternative terminology and concepts that may appear in project
+    documentation.
+
+    Return only the queries, one per line.
+
+    QUESTION:
+    {question}
+    """
+
+    response = client.responses.create(
+        model="gpt-5.5",
+        input=prompt,
+    )
+
+    return [line.strip() for line in response.output_text.splitlines() if line.strip()]
+
+
+## Function for retrieving candidates using both the original and expanded queries. This allows us to gather a broader set of relevant chunks, increasing the chances of finding useful information.
+def retrieve_with_query_expansion(
+    client: OpenAI,
+    chunks: list[dict],
+    question: str,
+    expanded_queries: list[str],
+    top_k_per_query: int = 2,
+) -> list[dict]:
+    """Retrieve candidates using the original and expanded queries."""
+
+    queries = [question] + expanded_queries
+    all_candidates = []
+
+    for query in queries:
+        query_embedding = create_query_embedding(
+            client,
+            query,
+        )
+
+        retrieved = retrieve_chunks(
+            chunks,
+            query_embedding,
+            top_k=top_k_per_query,
+        )
+
+        print(f"\nRetrieval query: {query}")
+
+        for chunk in retrieved:
+            print(
+                f"{chunk['similarity']:.3f} | {chunk['source']} | {chunk['chunk_id']}"
+            )
+
+            all_candidates.append(chunk)
+
+    return all_candidates
+
+
+## Function for merging candidate chunks by deduplicating them and keeping the highest similarity score. This ensures that we have a unique set of chunks to consider for reranking and answer generation.
+def merge_candidates(
+    candidates: list[dict],
+) -> list[dict]:
+    """Deduplicate candidates and keep their highest similarity score."""
+
+    merged = {}
+
+    for chunk in candidates:
+        chunk_id = chunk["chunk_id"]
+
+        if (
+            chunk_id not in merged
+            or chunk["similarity"] > merged[chunk_id]["similarity"]
+        ):
+            merged[chunk_id] = chunk
+
+    return list(merged.values())
+
+
 def generate_answer(
     client: OpenAI,
     question: str,
@@ -270,9 +355,9 @@ def load_environment() -> None:
 
 
 TEST_QUESTIONS = [
-    "Has the customer agreed to the September 30 production date?",
-    "What authentication mechanism was selected for vehicles?",
-    "What is the project's approved budget?",
+    # "Has the customer agreed to the September 30 production date?",
+    # "What authentication mechanism was selected for vehicles?",
+    # "What is the project's approved budget?",
     "What could prevent us from validating the system under the expected maximum production load?",
 ]
 
@@ -287,17 +372,31 @@ def main() -> None:
     chunks = create_embeddings(client, chunks)
 
     for question in TEST_QUESTIONS:
-        query_embedding = create_query_embedding(
+        ## EXPAND
+        expanded_queries = expand_query(
             client,
             question,
         )
 
-        candidate_chunks = retrieve_chunks(
+        ## RETRIEVE
+        candidate_chunks = retrieve_with_query_expansion(
+            client,
             chunks,
-            query_embedding,
-            top_k=6,
+            question,
+            expanded_queries,
+            top_k_per_query=2,
         )
 
+        ## MERGE
+        candidate_chunks = merge_candidates(candidate_chunks)
+
+        print(f"\nOriginal: {question}")
+        print("Expanded queries:")
+
+        for query in expanded_queries:
+            print(f"- {query}")
+
+        ## RERANK
         reranked_chunks = rerank_chunks(
             client,
             question,

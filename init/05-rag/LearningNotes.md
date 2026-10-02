@@ -125,7 +125,33 @@ The implementation in `01_basic_rag.py` follows this flow:
 
 The implementation deliberately uses Python, NumPy, and the OpenAI API without a RAG framework or vector database so that each part of the pipeline remains visible.
 
-## 7. Reranking
+## 7. Similarity Thresholds
+
+### Definition / Explanation
+
+A similarity threshold can be used to reject retrieved chunks whose
+embedding similarity is below a chosen value.
+
+This can prevent obviously unrelated chunks from being passed to the
+LLM. However, cosine similarity is not a confidence score, and there is
+no universal threshold that separates relevant from irrelevant content.
+
+In this exercise, a threshold of 0.50 successfully rejected irrelevant
+results for one query, but also would have rejected highly relevant
+information for another differently phrased query.
+
+### Key Characteristics
+
+- Similarity thresholds can remove obviously weak retrieval results.
+- Cosine similarity should not be interpreted as a probability or
+  confidence percentage.
+- A threshold that works for one dataset or query may fail for another.
+- Relevant information can have relatively low embedding similarity.
+- Thresholds should be evaluated and tuned rather than treated as
+  universal constants.
+
+
+## 8. Reranking
 
 ### Definition / Explanation
 
@@ -145,11 +171,106 @@ and produces a more precise relevance ranking.
 - Vector retrieval is useful for finding candidate chunks efficiently.
 - High embedding similarity does not guarantee high answer relevance.
 - A relevant chunk may have a relatively low embedding similarity score.
-- The first retrieval stage should prioritize recall: finding potentially
-  useful information.
-- Reranking should prioritize precision: identifying which candidates
-  actually help answer the question.
-- Reranking cannot recover a relevant chunk that was not included in
-  the candidate set.
-- Similarity thresholds should not be treated as universal confidence
-  scores.
+- Initial retrieval should prioritize recall: finding potentially useful information.
+- Reranking should prioritize precision: identifying which candidate actually help answer the question.
+- Reranking cannot recover a relevant chunk that was not included in the candidate set.
+- Multiple candidates can be reranked in a single model request.
+
+
+## 9. Query Expansion
+
+### Definition / Explanation
+
+Query expansion generates alternative search queries that represent the
+same user intent using different terminology or perspectives.
+
+The original question and the expanded queries can each be embedded and
+used for retrieval.
+
+This increases the probability that relevant chunks are discovered even
+when the user's wording differs significantly from the wording used in
+the source documents.
+
+### Key Characteristics
+
+- One user question can be represented by several search queries.
+- Expanded queries can introduce terminology likely to appear in the source documents.
+- Each query can retrieve a different set of candidate chunks.
+- Query expansion improves retrieval recall.
+- It is especially useful when the user's language differs from the
+  terminology used in the knowledge base.
+- Expanded queries are generated dynamically and may differ between executions.
+- Query expansion increases retrieval work because multiple searches
+  are performed for one user question.
+
+
+## 10. Candidate Merging
+
+### Definition / Explanation
+
+When multiple queries are used for retrieval, the same document chunk
+may be retrieved several times.
+
+Candidate merging combines these retrieval results into a single set of
+unique chunks before reranking.
+
+In this exercise, chunks are identified by their `chunk_id`. If the same
+chunk is retrieved by several queries, the highest observed similarity
+score is retained.
+
+### Key Characteristics
+
+- Duplicate chunks should not be sent repeatedly to the reranker.
+- `chunk_id` provides a stable identifier for deduplication.
+- A chunk may be discovered by both the original query and several
+  expanded queries.
+- Keeping the maximum similarity score is a simple merging strategy.
+- Other strategies could also consider retrieval rank, average score,
+  or how many queries retrieved the chunk.
+- Candidate merging reduces unnecessary context and reranking work.
+
+
+## 11. Recall and Precision
+
+### Definition / Explanation
+
+Recall and precision describe two different goals within the retrieval
+pipeline.
+
+Recall is concerned with finding the relevant information in the first
+place.
+
+Precision is concerned with ensuring that the retrieved information is
+actually useful for answering the question.
+
+The retrieval pipeline can therefore use different stages optimized for
+different purposes.
+
+### Key Characteristics
+
+- Candidate retrieval should prioritize recall.
+- Query expansion can improve recall by searching from multiple semantic perspectives.
+- Reranking improves precision by evaluating candidate usefulness more carefully.
+- A reranker cannot evaluate information that candidate retrieval failed to find.
+- A strong RAG pipeline therefore needs both good candidate retrieval
+  and good candidate selection.
+
+
+## 12. Improved Retrieval Pipeline
+
+The retrieval pipeline implemented in `02_improved_retrieval.py` is:
+
+User Question
+→ Query Expansion
+→ Embed Original and Expanded Queries
+→ Retrieve Top Candidates for Each Query
+→ Merge and Deduplicate Candidates
+→ Rerank Candidates
+→ Select Best Evidence
+
+The exercise demonstrated that embedding similarity alone is not enough
+to determine whether a chunk can answer a question.
+
+A chunk with relatively low similarity to the original question can
+still contain the best answer. Query expansion can help retrieve that
+chunk, while reranking can identify it as the most useful evidence.
