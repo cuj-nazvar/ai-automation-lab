@@ -124,3 +124,32 @@ The implementation in `01_basic_rag.py` follows this flow:
 9. Ask the LLM to answer using only the retrieved information.
 
 The implementation deliberately uses Python, NumPy, and the OpenAI API without a RAG framework or vector database so that each part of the pipeline remains visible.
+
+## 7. Reranking
+
+### Definition / Explanation
+
+Reranking is a second retrieval stage that evaluates candidate chunks
+more carefully based on how useful they are for answering a specific
+question.
+
+Embedding similarity can efficiently identify potentially relevant
+chunks, but semantic similarity does not necessarily mean that a chunk
+contains the information needed to answer the question.
+
+A reranker evaluates the question together with each candidate chunk
+and produces a more precise relevance ranking.
+
+### Key Characteristics
+
+- Vector retrieval is useful for finding candidate chunks efficiently.
+- High embedding similarity does not guarantee high answer relevance.
+- A relevant chunk may have a relatively low embedding similarity score.
+- The first retrieval stage should prioritize recall: finding potentially
+  useful information.
+- Reranking should prioritize precision: identifying which candidates
+  actually help answer the question.
+- Reranking cannot recover a relevant chunk that was not included in
+  the candidate set.
+- Similarity thresholds should not be treated as universal confidence
+  scores.
