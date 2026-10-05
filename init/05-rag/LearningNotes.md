@@ -274,3 +274,250 @@ to determine whether a chunk can answer a question.
 A chunk with relatively low similarity to the original question can
 still contain the best answer. Query expansion can help retrieve that
 chunk, while reranking can identify it as the most useful evidence.
+
+## 13. Vector Stores and Persistent Indexing
+
+### Definition / Explanation
+
+A vector store persists document chunks together with their embeddings
+and metadata so that document embeddings do not need to be regenerated
+for every user query.
+
+In the earlier RAG exercises, documents were loaded, chunked and embedded
+every time the application started. The embeddings existed only in
+memory and disappeared when the program stopped.
+
+In this exercise, the generated embeddings are persisted in a simple
+JSON-based vector store.
+
+Each stored entry contains information such as:
+
+- the source document
+- a unique chunk identifier
+- the original chunk content
+- a content hash
+- the embedding vector
+
+The JSON implementation is intentionally simple and inefficient. Its
+purpose is to make the contents and behavior of a vector store visible
+before introducing a specialized vector database.
+
+
+### Indexing vs Querying
+
+A RAG system has two conceptually different workflows.
+
+#### Indexing
+
+Indexing prepares source information for retrieval:
+
+Documents
+→ Chunk
+→ Embed
+→ Store
+
+Indexing normally happens when documents are added or changed.
+
+#### Querying
+
+Querying searches the previously created index:
+
+Question
+→ Embed Question
+→ Compare with Stored Embeddings
+→ Retrieve Relevant Chunks
+
+Querying happens for every user question.
+
+The important distinction is that document embeddings can be created
+once and reused across many queries. Only the new user question needs
+to be embedded during normal retrieval.
+
+
+## 14. Incremental Indexing
+
+### Definition / Explanation
+
+Rebuilding every embedding whenever a knowledge base changes is
+unnecessary and potentially expensive.
+
+Incremental indexing identifies which chunks have actually changed and
+creates new embeddings only for those chunks.
+
+In this exercise, each chunk receives a SHA-256 hash calculated from its
+content.
+
+During indexing, the current hash is compared with the hash stored in
+the existing vector store.
+
+The resulting behavior is:
+
+- unchanged chunk → reuse existing embedding
+- changed chunk → create a new embedding
+- new chunk → create a new embedding
+- deleted chunk → remove it from the new index
+
+
+### Content Hashes
+
+A content hash provides a deterministic fingerprint of a chunk.
+
+The same content produces the same hash:
+
+content
+→ SHA-256
+→ content_hash
+
+If the content changes, the hash changes as well.
+
+This allows the indexing process to determine whether an existing
+embedding can safely be reused without comparing large embedding
+vectors or blindly regenerating them.
+
+
+### Key Characteristics
+
+- Persistent embeddings avoid repeatedly embedding unchanged documents.
+- Indexing and querying are separate operations.
+- Content hashes can efficiently detect changed chunks.
+- Unchanged chunks can reuse their existing embeddings.
+- New and modified chunks require new embeddings.
+- Deleted chunks should disappear from the updated index.
+- The vector store represents an indexed snapshot of the source
+  documents.
+- Changing a source document does not automatically update the index.
+- The index must be synchronized when the source documents change.
+
+
+## 15. Chunk Identity
+
+### Definition / Explanation
+
+Incremental indexing also requires a way to identify chunks across
+different indexing runs.
+
+In this exercise, chunk identity is based on the source filename and the
+chunk's position:
+
+    risk_register.md:4
+
+This approach is simple but has an important limitation.
+
+If a new section is inserted near the beginning of a document, the
+position of later chunks changes:
+
+Before:
+
+    risk_register.md:1 → RISK-001
+    risk_register.md:2 → RISK-002
+    risk_register.md:3 → RISK-003
+
+After inserting a new section:
+
+    risk_register.md:1 → NEW
+    risk_register.md:2 → RISK-001
+    risk_register.md:3 → RISK-002
+    risk_register.md:4 → RISK-003
+
+The content hashes prevent the system from incorrectly reusing an
+embedding for different content, but several unchanged chunks may still
+be unnecessarily re-embedded because their identifiers changed.
+
+Production indexing systems therefore require more robust strategies
+for document and chunk identity.
+
+
+## Why Use a Real Vector Database?
+
+The JSON vector store created in this exercise demonstrates the basic
+data model of a vector store, but it is not designed for scale.
+
+A stored chunk fundamentally contains:
+
+    {
+        "chunk_id": "...",
+        "source": "...",
+        "content": "...",
+        "content_hash": "...",
+        "embedding": [...]
+    }
+
+Our implementation loads every vector into memory and compares the query
+embedding against every stored vector.
+
+This is sufficient for a tiny educational dataset, but becomes
+inefficient as the number of chunks grows.
+
+Specialized vector stores and databases provide capabilities such as:
+
+- efficient vector indexing and similarity search
+- persistent storage
+- metadata filtering
+- scalable retrieval
+- document updates and deletion
+- optimized storage of large embedding vectors
+
+The underlying concept remains the same:
+
+Store vectors representing knowledge and efficiently find the vectors
+most relevant to a query.
+
+
+## Complete RAG Architecture
+
+Across the exercises in this module, the RAG pipeline evolved from a
+simple implementation into a more realistic retrieval architecture.
+
+### Knowledge Ingestion
+
+Source Documents
+→ Chunking
+→ Content Hashing
+→ Embedding
+→ Persistent Vector Store
+
+### Retrieval
+
+User Question
+→ Query Expansion
+→ Query Embeddings
+→ Vector Search
+→ Candidate Merging
+→ Reranking
+→ Best Evidence
+
+### Generation
+
+Best Evidence
++ User Question
+→ LLM
+→ Grounded Answer
+
+
+## Main Lessons from the RAG Module
+
+Retrieval-Augmented Generation connects an LLM to information that is
+not contained in the model itself.
+
+The most important lessons from these exercises are:
+
+- Documents must be divided into useful semantic chunks.
+- Embeddings make semantic retrieval possible.
+- Vector similarity identifies semantically related information but is
+  not the same as answer relevance.
+- Retrieval should prioritize recall so that useful evidence reaches
+  later stages.
+- Query expansion can improve recall when user terminology differs from
+  document terminology.
+- Reranking improves precision by evaluating which retrieved chunks are
+  actually useful for answering the question.
+- A reranker cannot recover evidence that retrieval failed to find.
+- Candidate merging prevents duplicate evidence from wasting context.
+- Grounding instructions help prevent the model from answering questions
+  unsupported by the retrieved information.
+- Document embeddings should normally be persisted rather than
+  regenerated for every query.
+- Incremental indexing can reuse embeddings for unchanged content.
+- A vector store is not inherently an AI system; it is infrastructure
+  for storing and efficiently retrieving vectors and their associated
+  information.
